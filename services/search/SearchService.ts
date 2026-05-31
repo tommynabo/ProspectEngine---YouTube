@@ -41,10 +41,13 @@ export class SearchService {
                 'Madrid', 'Barcelona', 'Valencia', 'Sevilla', 'Bilbao',
                 'Zaragoza', 'Málaga', 'Alicante', 'México', 'Colombia', 'Miami', 'remoto',
             ];
+            // NOTE: baseKeyword may be a full boolean query (e.g. the agency preset uses
+            // ("agencia de marketing" OR "growth partner" ...) AND ("CEO" OR ...).
+            // Do NOT wrap in quotes — boolean operators (OR, AND, parentheses) must stay active.
             const baseDork =
                 `(site:linkedin.com/in/ OR site:linkedin.com/pub/) -inurl:dir -inurl:jobs ` +
                 `("CEO" OR "Founder" OR "Fundador" OR "Director" OR "Propietario" OR "Owner") ` +
-                `"${baseKeyword}"`;
+                `${baseKeyword}`;
             return LOCATIONS.map(loc => `${baseDork} "${loc}"`);
         }
 
@@ -934,11 +937,12 @@ export class SearchService {
 
         const corpus = `${title} ${description}`.toLowerCase();
 
-        // ── Spain gate — must show a Spain location signal in the snippet ──────
-        // LinkedIn snippets almost always include the region line; Gmail dorks
-        // already inject "España" in the query so it appears in results too.
-        const SPAIN_REGEX = /\b(espa[nñ]a|spain|madrid|barcelona|valencia|sevilla|bilbao|zaragoza|m[aá]laga|murcia|alicante|granada|vigo|c[oó]rdoba|canarias|galicia|andaluc[ií]a|euskadi|catalu[nñ]a|castilla|burgos|salamanca|valladolid|c[aá]diz|huelva|ja[eé]n|almer[ií]a|badajoz|c[aá]ceres|toledo|albacete|ciudad real|cuenca|guadalajara|le[oó]n|palencia|segovia|soria|zamora|[aá]vila|la rioja|navarra|asturias|cantabria|murcia|extremadura|baleares|canarias|pa[ií]s vasco)\b/i;
-        if (!SPAIN_REGEX.test(corpus)) return false;
+        // ── Location gate — must show a Spain OR LATAM location signal in the snippet ──
+        // LinkedIn snippets almost always include the region line; dorks inject the
+        // location term so it appears in results. LATAM included because
+        // generateQueryVariations() explicitly targets México, Colombia and Miami.
+        const LOCATION_REGEX = /\b(espa[nñ]a|spain|madrid|barcelona|valencia|sevilla|bilbao|zaragoza|m[aá]laga|murcia|alicante|granada|vigo|c[oó]rdoba|canarias|galicia|andaluc[ií]a|euskadi|catalu[nñ]a|castilla|burgos|salamanca|valladolid|c[aá]diz|huelva|ja[eé]n|almer[ií]a|badajoz|c[aá]ceres|toledo|albacete|ciudad real|cuenca|guadalajara|le[oó]n|palencia|segovia|soria|zamora|[aá]vila|la rioja|navarra|asturias|cantabria|extremadura|baleares|pa[ií]s vasco|m[eé]xico|colombia|miami|bogot[aá]|medell[ií]n|monterrey|ciudad de m[eé]xico|latam)\b/i;
+        if (!LOCATION_REGEX.test(corpus)) return false;
 
         // ── Negative gate (hard stop) ──────────────────────────────────────────
         const NEGATIVE_REGEX = /\b(junior|intern(a)?|estudiante|dise[nñ]ador|dise[nñ]o gr[aá]fico|freelance|buscando nuevas oportunidades|buscando empleo|open to work|en b[uú]squeda activa|profesor)\b/i;
