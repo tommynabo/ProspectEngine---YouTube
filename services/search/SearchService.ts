@@ -757,19 +757,29 @@ export class SearchService {
         const startTime = Date.now();
         const MAX_DURATION_MS = 38 * 60 * 1000;
         const BATCH_SIZE = 5;
+        // Each round advances Google pagination by 1 page (20 results/variation × 12 variations = 240 new raw results per round)
+        const MAX_GOOGLE_PAGES = 3;
+        let googlePage = 0;
 
-        // Process variations in batches of BATCH_SIZE to avoid Apify rate limits
-        for (let batchStart = 0; batchStart < variations.length; batchStart += BATCH_SIZE) {
-            if (!this.isRunning || validLeads.length >= targetCount) break;
+        while (validLeads.length < targetCount && this.isRunning && googlePage < MAX_GOOGLE_PAGES) {
             if (Date.now() - startTime > MAX_DURATION_MS) {
                 onLog(`[LINKEDIN] ⏱️ Tiempo máximo alcanzado. ${validLeads.length}/${targetCount} leads encontrados.`);
                 break;
             }
 
+            if (googlePage > 0) {
+                onLog(`[LINKEDIN] 🔄 Ronda ${googlePage + 1}: paginando a página ${googlePage} de Google (${validLeads.length}/${targetCount} encontrados hasta ahora)...`);
+            }
+
+        // Process variations in batches of BATCH_SIZE to avoid Apify rate limits
+        for (let batchStart = 0; batchStart < variations.length; batchStart += BATCH_SIZE) {
+            if (!this.isRunning || validLeads.length >= targetCount) break;
+            if (Date.now() - startTime > MAX_DURATION_MS) break;
+
             const batchVariations = variations.slice(batchStart, batchStart + BATCH_SIZE);
             const batchNum = Math.floor(batchStart / BATCH_SIZE) + 1;
             const totalBatches = Math.ceil(variations.length / BATCH_SIZE);
-            onLog(`[LINKEDIN] 📦 Lote ${batchNum}/${totalBatches}: ${batchVariations.length} queries concurrentes...`);
+            onLog(`[LINKEDIN] 📦 Ronda ${googlePage + 1}, Lote ${batchNum}/${totalBatches}: ${batchVariations.length} queries concurrentes (página ${googlePage})...`);
 
             // Execute batch concurrently
             let batchOrganicResults: any[] = [];
@@ -780,6 +790,7 @@ export class SearchService {
                             queries: q,
                             maxPagesPerQuery: 1,
                             resultsPerPage: 20,
+                            startPage: googlePage,
                             languageCode: 'es',
                             countryCode: 'es',
                         }, onLog).catch((e: Error) => {
@@ -889,6 +900,9 @@ export class SearchService {
             }
         } // end batch loop
 
+            googlePage++;
+        } // end pagination while loop
+
         const elapsed = Math.round((Date.now() - startTime) / 1000);
         onLog(`[LINKEDIN] 🏁 Búsqueda completada: ${validLeads.length}/${targetCount} en ${elapsed}s`);
         onComplete(validLeads);
@@ -929,7 +943,7 @@ export class SearchService {
     // Returns true  → lead matches ICP, proceed normally.
     // Returns false → discard immediately.
     // ═══════════════════════════════════════════════════════════════════════════
-    private fastICPFilter(title: string, description: string, _icpType: string, url?: string): boolean {
+    private fastICPFilter(title: string, description: string, mode: string, url?: string): boolean {
         // ── URL type gate — reject company pages, posts, and job listings ─────
         if (url) {
             if (/linkedin\.com\/(company|posts|jobs)\//i.test(url)) return false;
@@ -937,19 +951,23 @@ export class SearchService {
 
         const corpus = `${title} ${description}`.toLowerCase();
 
-        // ── Location gate — must show a Spain OR LATAM location signal in the snippet ──
-        // LinkedIn snippets almost always include the region line; dorks inject the
-        // location term so it appears in results. LATAM included because
-        // generateQueryVariations() explicitly targets México, Colombia and Miami.
-        const LOCATION_REGEX = /\b(espa[nñ]a|spain|madrid|barcelona|valencia|sevilla|bilbao|zaragoza|m[aá]laga|murcia|alicante|granada|vigo|c[oó]rdoba|canarias|galicia|andaluc[ií]a|euskadi|catalu[nñ]a|castilla|burgos|salamanca|valladolid|c[aá]diz|huelva|ja[eé]n|almer[ií]a|badajoz|c[aá]ceres|toledo|albacete|ciudad real|cuenca|guadalajara|le[oó]n|palencia|segovia|soria|zamora|[aá]vila|la rioja|navarra|asturias|cantabria|extremadura|baleares|pa[ií]s vasco|m[eé]xico|colombia|miami|bogot[aá]|medell[ií]n|monterrey|ciudad de m[eé]xico|latam)\b/i;
-        if (!LOCATION_REGEX.test(corpus)) return false;
+        // ── Location gate — ONLY applied for Gmail mode ────────────────────────
+        // For LinkedIn/Skool: location is already guaranteed by the dork query
+        // (we inject "Madrid", "Barcelona", etc. into every variation). Applying
+        // it on the snippet would falsely reject profiles whose Google snippet
+        // doesn't render the city line — which is the majority of LinkedIn results.
+        if (mode === 'gmail') {
+            const LOCATION_REGEX = /\b(espa[nñ]a|spain|madrid|barcelona|valencia|sevilla|bilbao|zaragoza|m[aá]laga|murcia|alicante|granada|vigo|c[oó]rdoba|canarias|galicia|andaluc[ií]a|euskadi|catalu[nñ]a|castilla|burgos|salamanca|valladolid|c[aá]diz|huelva|ja[eé]n|almer[ií]a|badajoz|c[aá]ceres|toledo|albacete|ciudad real|cuenca|guadalajara|le[oó]n|palencia|segovia|soria|zamora|[aá]vila|la rioja|navarra|asturias|cantabria|extremadura|baleares|pa[ií]s vasco|m[eé]xico|colombia|miami|bogot[aá]|medell[ií]n|monterrey|ciudad de m[eé]xico|latam)\b/i;
+            if (!LOCATION_REGEX.test(corpus)) return false;
+        }
 
         // ── Negative gate (hard stop) ──────────────────────────────────────────
         const NEGATIVE_REGEX = /\b(junior|intern(a)?|estudiante|dise[nñ]ador|dise[nñ]o gr[aá]fico|freelance|buscando nuevas oportunidades|buscando empleo|open to work|en b[uú]squeda activa|profesor)\b/i;
         if (NEGATIVE_REGEX.test(corpus)) return false;
 
         // ── Positive gate (must match at least one) ────────────────────────────
-        const POSITIVE_REGEX = /\b(founder|ceo|director|agencia|marketing|skool|comunidad|ayudo a|growth)\b/i;
+        // Expanded to cover English titles, co-founders, and common agency descriptors.
+        const POSITIVE_REGEX = /\b(co-?founder|cofundador|fundador|founder|ceo|director|agencia|agency|marketing|skool|comunidad|growth|partner|socio|propietario|owner|gerente|paid|digital|ayudo\s+a)\b/i;
         return POSITIVE_REGEX.test(corpus);
     }
 }
