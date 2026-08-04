@@ -56,7 +56,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary/20 border border-primary/30 mb-4">
             <Activity className="w-6 h-6 text-primary" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight">Apex Engine</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Prospect Engine</h1>
         </div>
 
         <div className="bg-card border border-border rounded-xl p-8 shadow-2xl">

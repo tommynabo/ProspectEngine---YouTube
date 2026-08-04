@@ -48,8 +48,8 @@ cat .env | grep -E "VITE_SUPABASE|VITE_OPENAI|VITE_APIFY"
 VITE_SUPABASE_URL=https://biltmzurmhvgdprpekoa.supabase.co ✅
 VITE_SUPABASE_ANON_KEY=eyJhbGc... ✅
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGc... ✅
-VITE_OPENAI_API_KEY=sk-proj-... ✅
-VITE_APIFY_API_TOKEN=apify_api_... ✅
+VITE_OPENAI_API_KEY=YOUR_OPENAI_API_KEY... ✅
+VITE_APIFY_API_TOKEN=YOUR_APIFY_API_TOKEN... ✅
 ```
 
 ---
@@ -220,7 +220,7 @@ cat .env | head -5
 **Solución:**
 ```bash
 echo $VITE_OPENAI_API_KEY
-# Verificar que comience con: sk-proj-
+# Verificar que comience con: YOUR_OPENAI_API_KEY
 ```
 
 ### Error: "relation 'leads' does not exist"

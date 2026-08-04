@@ -1,57 +1,23 @@
 #!/bin/bash
-# ApexEngine - Initialize Supabase Schema
-# This script applies the new schema to your Supabase project
-# 
-# Usage: bash deploy-schema.sh
-#
-# Before running:
-# 1. Make sure you have supabase CLI installed: brew install supabase/tap/supabase
-# 2. Run: supabase link --project-ref biltmzurmhvgdprpekoa
-# 3. Then run this script
+# ProspectEngine-YouTube - Initialize Supabase Schema
+# Usage: SUPABASE_DB_PASSWORD=your_password bash deploy-schema.sh
 
-echo "🚀 ApexEngine - Supabase Schema Deployment"
-echo "==========================================="
-echo ""
+set -e
 
-# Check if supabase CLI is installed
-if ! command -v supabase &> /dev/null; then
-    echo "❌ Supabase CLI not found. Install it with:"
-    echo "   brew install supabase/tap/supabase"
+echo "🚀 ProspectEngine-YouTube - Supabase Schema Deployment"
+echo "======================================================="
+
+if [ -z "$SUPABASE_DB_PASSWORD" ]; then
+    echo "❌ Error: SUPABASE_DB_PASSWORD environment variable is required"
+    echo "Usage: SUPABASE_DB_PASSWORD=your_password bash deploy-schema.sh"
     exit 1
 fi
 
-# Check if SUPABASE_DB_PASSWORD is set (required)
-if [ -z "$SUPABASE_DB_PASSWORD" ]; then
-    echo "⚠️  SUPABASE_DB_PASSWORD not set. You may need to provide it when prompted."
-fi
+# Replace with your new Supabase project ID
+SUPABASE_PROJECT_ID="${SUPABASE_PROJECT_ID:-YOUR_PROJECT_ID}"
 
-echo "📝 Deploying schema to: biltmzurmhvgdprpekoa"
-echo ""
+echo "📋 Deploying schema to project: $SUPABASE_PROJECT_ID"
 
-# Apply the migration
-supabase migration up --db-url "postgresql://postgres:${SUPABASE_DB_PASSWORD:-password}@db.biltmzurmhvgdprpekoa.supabase.co:6543/postgres"
+psql "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_ID}.supabase.co:6543/postgres" < supabase/apex_engine_schema.sql
 
-# Alternative: If using Edge Functions or direct psql
-# psql "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.biltmzurmhvgdprpekoa.supabase.co:6543/postgres" < supabase/apex_engine_schema.sql
-
-echo ""
-echo "✅ Schema deployment complete!"
-echo ""
-echo "📊 Tables created:"
-echo "   - profiles"
-echo "   - search_criteria"
-echo "   - search_history"
-echo "   - leads"
-echo "   - message_templates"
-echo "   - daily_contact_log"
-echo "   - system_prompts"
-echo "   - deduplication_log"
-echo "   - api_usage_tracking"
-echo "   - user_configuration"
-echo ""
-echo "🔐 Row-level security (RLS) configured for all tables"
-echo ""
-echo "Next steps:"
-echo "1. Test the connection in your app"
-echo "2. Create a test user if needed"
-echo "3. Run: npm run dev"
+echo "✅ Schema deployed successfully"
