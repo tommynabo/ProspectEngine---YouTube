@@ -6,14 +6,20 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "db:test": "node -r dotenv/config -e \"const db = require('./lib/db.ts'); db.query('SELECT version()').then(r => console.log(r.rows[0])).catch(e => console.error(e))\"",
+    "db:migrate": "node -r dotenv/config --input-type=module -e \"import('./lib/db.ts').then(async m => { const sql = await import('fs').then(f => f.promises.readFile('/tmp/neon_setup.sql', 'utf8')); await m.query(sql); process.exit(0); }).catch(e => { console.error(e); process.exit(1); })\"",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.94.1",
+    "pg": "^8.11.0",
+    "dotenv": "^16.4.0",
     "cheerio": "^1.2.0",
     "lucide-react": "^0.563.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^8.5.1"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
