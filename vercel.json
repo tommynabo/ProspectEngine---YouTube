@@ -8,11 +8,9 @@
     }
   ],
   "env": {
-    "DATABASE_URL": "@database_url",
-    "POSTGRES_PRISMA_URL": "@postgres_prisma_url",
-    "JWT_SECRET": "@jwt_secret",
-    "VITE_OPENAI_API_KEY": "@openai_api_key",
-    "VITE_APIFY_API_TOKEN": "@apify_token"
+    "DATABASE_URL": "@DATABASE_URL",
+    "POSTGRES_PRISMA_URL": "@POSTGRES_PRISMA_URL",
+    "JWT_SECRET": "@JWT_SECRET"
   },
   "rewrites": [
     {
