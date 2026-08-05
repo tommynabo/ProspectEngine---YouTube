@@ -3,6 +3,11 @@
   "devCommand": "npm run dev",
   "framework": "vite",
   "outputDirectory": "dist",
+  "functions": {
+    "api/*.ts": {
+      "runtime": "nodejs22.x"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/apify/(.*)",
