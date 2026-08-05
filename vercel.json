@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/apify/(.*)",
-      "destination": "https://api.apify.com/v2/$1"
+      "destination": "/api/apify?apify_path=$1"
     },
     {
       "source": "/api/(.*)",

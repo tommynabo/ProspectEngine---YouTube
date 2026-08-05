@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
-  Plus, Cpu, Trash2, Play, X, Target, Zap, ChevronRight,
-  Linkedin, Map, Instagram, Globe, Users, Tag, Calendar,
+  Plus, Cpu, Trash2, X, Target, ChevronRight,
+  Linkedin, Map, Instagram, Globe, Users, Calendar,
 } from 'lucide-react';
 import { ICPProfile, SearchMethod, ProspectingEngine, SearchSession } from '../lib/types';
 
@@ -239,7 +239,7 @@ function EngineCard({
           onClick={onRun}
           className="flex items-center gap-2 bg-primary text-primary-foreground text-xs font-semibold px-3 py-1.5 rounded-lg hover:brightness-110 active:scale-[0.97] transition-all shadow-sm shadow-primary/20"
         >
-          <Play className="w-3 h-3" /> Ejecutar
+          <ChevronRight className="w-3 h-3" /> Abrir Motor
         </button>
       </div>
     </div>

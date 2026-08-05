@@ -30,8 +30,8 @@ function TagInput({
     <div className="relative">
       <div className="min-h-[auto] flex flex-wrap gap-2 items-center border border-border rounded-lg px-3 py-2.5 bg-background focus-within:border-primary/50 transition-colors">
         {tags.map(tag => (
-          <span key={tag} className="inline-flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-semibold px-2.5 py-1 rounded-lg border border-primary/20 flex-shrink-0">
-            <span className="truncate max-w-[140px]">{tag}</span>
+          <span key={tag} className="inline-flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-semibold px-2.5 py-1 rounded-lg border border-primary/20 flex-shrink-0 max-w-full">
+            <span className="break-all">{tag}</span>
             <button type="button" onClick={() => onChange(tags.filter(t => t !== tag))} className="hover:text-red-400 transition-colors flex-shrink-0">
               <X className="w-3.5 h-3.5" />
             </button>

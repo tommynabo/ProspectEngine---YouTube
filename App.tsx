@@ -11,7 +11,29 @@ import { EngineWorkspace } from './components/EngineWorkspace';
 import { SearchHistory } from './components/SearchHistory';
 import { Lead, SearchConfigState, PageView, SearchSession, ICPProfile, SearchMethod, ProspectingEngine } from './lib/types';
 import { searchService } from './services/search/SearchService';
-import { supabase } from './lib/supabase';
+
+// ─── Auth helpers ─────────────────────────────────────────────────────────────
+
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem('auth_token') || '';
+  return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+}
+
+async function apiGet<T = any>(url: string): Promise<T | null> {
+  try {
+    const res = await fetch(url, { headers: authHeaders() });
+    const json = await res.json();
+    return json.success ? json.data : null;
+  } catch { return null; }
+}
+
+async function apiPost<T = any>(url: string, body: object): Promise<T | null> {
+  try {
+    const res = await fetch(url, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+    const json = await res.json();
+    return json.success ? json.data : null;
+  } catch { return null; }
+}
 
 // ─── Build search query from ICP + Method ─────────────────────────────────────
 
@@ -197,94 +219,98 @@ function App() {
 
   const handleIcpsChange = (updated: ICPProfile[]) => {
     setIcps(updated);
-    if (userId) saveToStorage('icps', userId, updated);
+    if (userId) {
+      saveToStorage('icps', userId, updated);
+      apiPost('/api/user-data?type=icps', { icps: updated }).catch(console.error);
+    }
   };
 
   const handleMethodsChange = (updated: SearchMethod[]) => {
     setMethods(updated);
-    if (userId) saveToStorage('methods', userId, updated);
+    if (userId) {
+      saveToStorage('methods', userId, updated);
+      apiPost('/api/user-data?type=methods', { methods: updated }).catch(console.error);
+    }
   };
 
   const handleEnginesChange = (updated: ProspectingEngine[]) => {
     setEngines(updated);
-    if (userId) saveToStorage('engines', userId, updated);
+    if (userId) {
+      saveToStorage('engines', userId, updated);
+      apiPost('/api/user-data?type=engines', { engines: updated }).catch(console.error);
+    }
   };
 
   // ── Load all user data ───────────────────────────────────────────────────────
 
   const loadUserData = async (uid: string) => {
-    setIcps(loadFromStorage<ICPProfile>('icps', uid));
-    setMethods(loadFromStorage<SearchMethod>('methods', uid));
-    setEngines(loadFromStorage<ProspectingEngine>('engines', uid));
+    // Load from localStorage first (fast, immediate)
+    const localIcps = loadFromStorage<ICPProfile>('icps', uid);
+    const localMethods = loadFromStorage<SearchMethod>('methods', uid);
+    const localEngines = loadFromStorage<ProspectingEngine>('engines', uid);
+    setIcps(localIcps);
+    setMethods(localMethods);
+    setEngines(localEngines);
+
+    // Then sync from DB (source of truth — may have data from other devices)
+    const [dbIcps, dbMethods, dbEngines] = await Promise.all([
+      apiGet<ICPProfile[]>('/api/user-data?type=icps'),
+      apiGet<SearchMethod[]>('/api/user-data?type=methods'),
+      apiGet<ProspectingEngine[]>('/api/user-data?type=engines'),
+    ]);
+
+    if (dbIcps && dbIcps.length > 0) {
+      setIcps(dbIcps);
+      saveToStorage('icps', uid, dbIcps);
+    } else if (localIcps.length > 0) {
+      // Sync local data to DB
+      apiPost('/api/user-data?type=icps', { icps: localIcps }).catch(console.error);
+    }
+    if (dbMethods && dbMethods.length > 0) {
+      setMethods(dbMethods);
+      saveToStorage('methods', uid, dbMethods);
+    } else if (localMethods.length > 0) {
+      apiPost('/api/user-data?type=methods', { methods: localMethods }).catch(console.error);
+    }
+    if (dbEngines && dbEngines.length > 0) {
+      setEngines(dbEngines);
+      saveToStorage('engines', uid, dbEngines);
+    } else if (localEngines.length > 0) {
+      apiPost('/api/user-data?type=engines', { engines: localEngines }).catch(console.error);
+    }
+
     await loadHistory(uid);
   };
 
-  const loadHistory = async (uid: string) => {
+  const loadHistory = async (_uid: string) => {
     try {
-      const { data: searchData, error: searchError } = await supabase
-        .from('search_history')
-        .select('*')
-        .eq('user_id', uid)
-        .order('executed_at', { ascending: false });
-
-      if (searchError) { console.error('DB Error loading history:', searchError); return; }
-
-      if (searchData && searchData.length > 0) {
-        const sessions: SearchSession[] = await Promise.all(
-          searchData.map(async (row) => {
-            const { data: leadsData } = await supabase
-              .from('leads')
-              .select('*')
-              .eq('search_id', row.id);
-
-            const leads: Lead[] = (leadsData || []).map(l => ({
-              id: l.id,
-              source: (l.source || row.source || 'linkedin') as any,
-              companyName: l.company_name || 'Sin Nombre',
-              website: l.website,
-              location: l.location,
-              decisionMaker: l.decision_maker ? {
-                name: l.decision_maker.name || '',
-                role: l.decision_maker.role || '',
-                email: l.decision_maker.email || '',
-                phone: l.decision_maker.phone,
-                linkedin: l.decision_maker.linkedin,
-                facebook: l.decision_maker.facebook,
-                instagram: l.decision_maker.instagram,
-              } : undefined,
-              aiAnalysis: {
-                summary: l.ai_analysis?.summary || '',
-                painPoints: l.ai_analysis?.painPoints || [],
-                generatedIcebreaker: l.ai_analysis?.generatedIcebreaker || '',
-                fullMessage: l.ai_analysis?.fullMessage || '',
-                fullAnalysis: l.ai_analysis?.fullAnalysis || l.ai_analysis?.summary || '',
-                psychologicalProfile: l.ai_analysis?.psychologicalProfile || '',
-                businessMoment: l.ai_analysis?.businessMoment || '',
-                salesAngle: l.ai_analysis?.salesAngle || '',
-              },
-              messageA: l.message_a,
-              isNPLPotential: l.is_npl_potential || false,
-              status: (l.status || 'scraped') as any,
-              icp_type: l.icp_type as any,
-            }));
-
-            return {
-              id: row.id,
-              date: new Date(row.executed_at),
-              query: row.query || '',
-              source: (row.source || 'linkedin') as any,
-              resultsCount: leads.length || row.results_count || 0,
-              leads,
-              icp_type: (row.icp_type as any) || undefined,
-              engineId: row.engine_id || undefined,
-              engineName: row.engine_name || undefined,
-            };
-          })
-        );
-
-        setHistory(sessions);
-        const leadsSum = sessions.reduce((sum, s) => sum + s.leads.length, 0);
-        setTotalLeadsGenerated(leadsSum);
+      const sessions = await apiGet<any[]>('/api/history');
+      if (sessions && sessions.length > 0) {
+        const mapped: SearchSession[] = sessions.map(row => ({
+          id: row.id,
+          date: new Date(row.date),
+          query: row.query || '',
+          source: (row.source || 'linkedin') as any,
+          resultsCount: row.resultsCount || 0,
+          leads: (row.leads || []).map((l: any) => ({
+            id: l.id,
+            source: l.source || row.source || 'linkedin',
+            companyName: l.companyName || 'Sin Nombre',
+            website: l.website,
+            location: l.location,
+            decisionMaker: l.decisionMaker || undefined,
+            aiAnalysis: l.aiAnalysis || { summary: '', painPoints: [] },
+            messageA: l.messageA,
+            isNPLPotential: l.isNPLPotential || false,
+            status: (l.status || 'scraped') as any,
+            icp_type: l.icp_type as any,
+          })),
+          icp_type: row.icp_type as any || undefined,
+          engineId: row.engineId || undefined,
+          engineName: row.engineName || undefined,
+        }));
+        setHistory(mapped);
+        setTotalLeadsGenerated(mapped.reduce((sum, s) => sum + s.leads.length, 0));
       }
     } catch (e) {
       console.error('Error loading history', e);
@@ -369,66 +395,22 @@ function App() {
 
         if (userId) {
           try {
-            const { data, error: searchError } = await supabase
-              .from('search_history')
-              .insert({
-                user_id: userId,
-                query: config.query,
-                source: config.source,
-                mode: config.mode,
-                max_results: config.maxResults,
-                results_count: results.length,
-                icp_type: config.icp_type || null,
-                engine_id: activeEngine?.id || null,
-                engine_name: activeEngine?.name || null,
-                executed_at: new Date().toISOString(),
-              })
-              .select();
+            const saved = await apiPost<{ searchId: string }>('/api/history', {
+              query: config.query,
+              source: config.source,
+              mode: config.mode,
+              maxResults: config.maxResults,
+              resultsCount: results.length,
+              icpType: config.icp_type || null,
+              engineId: activeEngine?.id || null,
+              engineName: activeEngine?.name || null,
+              leads: results,
+            });
 
-            if (searchError) {
-              addLog(`[DB] ⚠️ Error al guardar búsqueda: ${searchError.message}`);
-              return;
-            }
-
-            const searchId = data?.[0]?.id;
-            if (!searchId) return;
-            addLog(`[DB] ✅ Búsqueda registrada (ID: ${searchId})`);
-
-            const leadsToInsert = results.map(lead => ({
-              user_id: userId,
-              search_id: searchId,
-              source: lead.source || config.source,
-              company_name: lead.companyName || '',
-              website: lead.website || null,
-              location: lead.location || null,
-              decision_maker: lead.decisionMaker ? {
-                name: lead.decisionMaker.name, role: lead.decisionMaker.role,
-                email: lead.decisionMaker.email, phone: lead.decisionMaker.phone || null,
-                linkedin: lead.decisionMaker.linkedin || null,
-                facebook: lead.decisionMaker.facebook || null,
-                instagram: lead.decisionMaker.instagram || null,
-              } : null,
-              ai_analysis: {
-                summary: lead.aiAnalysis?.summary || '',
-                painPoints: lead.aiAnalysis?.painPoints || [],
-                generatedIcebreaker: lead.aiAnalysis?.generatedIcebreaker || '',
-                fullMessage: lead.aiAnalysis?.fullMessage || '',
-                fullAnalysis: lead.aiAnalysis?.fullAnalysis || '',
-                psychologicalProfile: lead.aiAnalysis?.psychologicalProfile || '',
-                businessMoment: lead.aiAnalysis?.businessMoment || '',
-                salesAngle: lead.aiAnalysis?.salesAngle || '',
-              },
-              message_a: lead.messageA || null,
-              is_npl_potential: lead.isNPLPotential || false,
-              icp_type: lead.icp_type || config.icp_type || null,
-              status: lead.status || 'scraped',
-            }));
-
-            const { error: leadsError } = await supabase.from('leads').insert(leadsToInsert);
-            if (leadsError) {
-              addLog(`[DB] ⚠️ Error al guardar contactos: ${leadsError.message}`);
+            if (saved?.searchId) {
+              addLog(`[DB] ✅ ${results.length} contactos guardados (ID: ${saved.searchId})`);
             } else {
-              addLog(`[DB] ✅ ${results.length} contactos guardados.`);
+              addLog(`[DB] ⚠️ No se pudo guardar la sesión en base de datos`);
             }
 
             // Update engine totalLeads

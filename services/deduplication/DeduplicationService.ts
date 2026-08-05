@@ -1,5 +1,21 @@
 import { Lead } from '../../lib/types';
-import { supabase } from '../../lib/supabase';
+
+// Helper to call /api/history with browser auth token
+async function fetchLeadsForDedup(userId: string): Promise<any[]> {
+  try {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') || '' : '';
+    const res = await fetch('/api/history', {
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    });
+    if (!res.ok) return [];
+    const json = await res.json();
+    if (!json.success || !Array.isArray(json.data)) return [];
+    // Flatten all leads from all sessions
+    return json.data.flatMap((session: any) => session.leads || []);
+  } catch {
+    return [];
+  }
+}
 
 /**
  * DeduplicationService
@@ -90,36 +106,21 @@ export class DeduplicationService {
     }
 
     try {
-      // Fetch all leads from user's history (NEW SCHEMA: table 'leads')
-      // LinkedIn URL and email are stored inside decision_maker JSONB, not as flat columns
-      const { data, error } = await supabase
-        .from('leads')
-        .select('company_name, website, decision_maker')
-        .eq('user_id', userId);
+      const leads = await fetchLeadsForDedup(userId);
 
-      if (error) {
-        console.error('[DEDUP] Error fetching existing leads:', error);
-        return { existingWebsites, existingCompanyNames, existingEmails, existingLinkedinUrls, totalCount: 0 };
-      }
-
-      if (!data || data.length === 0) {
+      if (!leads || leads.length === 0) {
         console.log('[DEDUP] ✅ Pre-Flight: Usuario sin historial previo');
         return { existingWebsites, existingCompanyNames, existingEmails, existingLinkedinUrls, totalCount: 0 };
       }
 
-      // Extract and normalize all previously scraped leads
-      for (const row of data) {
-        // Fix: schema uses 'website', not 'company_website'
-        if (row.website) {
-          existingWebsites.add(this.normalizeUrl(row.website));
-        }
+      for (const lead of leads) {
+        if (lead.website) existingWebsites.add(this.normalizeUrl(lead.website));
 
-        // Add normalized company name
-        if (row.company_name) {
-          const normalizedName = this.normalizeName(row.company_name);
+        if (lead.companyName) {
+          const normalizedName = this.normalizeName(lead.companyName);
           if (
-            row.company_name !== 'Sin Nombre' &&
-            row.company_name !== 'Empresa Desconocida' &&
+            lead.companyName !== 'Sin Nombre' &&
+            lead.companyName !== 'Empresa Desconocida' &&
             !normalizedName.includes('sin nombre') &&
             !normalizedName.includes('empresa desconocida')
           ) {
@@ -127,19 +128,11 @@ export class DeduplicationService {
           }
         }
 
-        // Fix: email and linkedin are inside decision_maker JSONB, not flat columns.
-        // These checks must be OUTSIDE the company_name block so person-level dedup
-        // works even when company name is empty or generic.
-        const dm = row.decision_maker as { linkedin?: string; email?: string } | null;
-        if (dm?.email) {
-          existingEmails.add(dm.email.toLowerCase().trim());
-        }
-        if (dm?.linkedin) {
-          existingLinkedinUrls.add(this.normalizeLinkedinUrl(dm.linkedin));
-        }
+        const dm = lead.decisionMaker as { linkedin?: string; email?: string } | null;
+        if (dm?.email) existingEmails.add(dm.email.toLowerCase().trim());
+        if (dm?.linkedin) existingLinkedinUrls.add(this.normalizeLinkedinUrl(dm.linkedin));
       }
 
-      // We allow multiple "Empresa Desconocida" leads because they might be different people
       const totalCount = existingWebsites.size + existingCompanyNames.size + existingEmails.size + existingLinkedinUrls.size;
       console.log(
         `[DEDUP] ✅ Pre-Flight Complete: ${existingWebsites.size} dominios + ${existingCompanyNames.size} empresas descargadas`

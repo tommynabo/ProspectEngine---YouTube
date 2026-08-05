@@ -302,9 +302,9 @@ export class SearchService {
     }
 
     private async callApifyActor(actorId: string, input: any, onLog: LogCallback): Promise<any[]> {
-        // Use local proxy to avoid CORS
+        // Token is injected server-side by /api/apify proxy — never pass it from browser
         const baseUrl = '/api/apify';
-        const startUrl = `${baseUrl}/acts/${actorId}/runs?token=${this.apiKey}`;
+        const startUrl = `${baseUrl}/acts/${actorId}/runs`;
 
         onLog(`[APIFY] 📡 Lanzando actor ${actorId.substring(0, 8)}...`);
         console.log('[APIFY] POST a:', startUrl.substring(0, 100));
@@ -366,7 +366,7 @@ export class SearchService {
             pollCount++;
 
             try {
-                const statusUrl = `${baseUrl}/acts/${actorId}/runs/${runId}?token=${this.apiKey}`;
+                const statusUrl = `${baseUrl}/acts/${actorId}/runs/${runId}`;
                 const statusRes = await fetch(statusUrl);
 
                 if (!statusRes.ok) {
@@ -418,7 +418,7 @@ export class SearchService {
         onLog(`[APIFY] 📥 Descargando dataset...`);
 
         try {
-            const itemsUrl = `${baseUrl}/datasets/${defaultDatasetId}/items?token=${this.apiKey}`;
+            const itemsUrl = `${baseUrl}/datasets/${defaultDatasetId}/items`;
             const itemsRes = await fetch(itemsUrl);
 
             if (!itemsRes.ok) {
@@ -453,10 +453,10 @@ export class SearchService {
         this.userId = userId || null;
 
         try {
-            // API key es configurada en el servidor, nunca en el frontend
-            this.apiKey = ''; // Placeholder - las llamadas se hacen a través del backend
+            // API key is injected server-side by /api/apify proxy — not needed on frontend
+            this.apiKey = '';
 
-            onLog(`[INIT] 🔑 API Key: Configurada en servidor (no expuesta en frontend)`);
+            onLog(`[INIT] 🔑 Apify: Token inyectado en servidor (seguro)`);
             onLog(`[INIT] 🚫 Modo Zero-AI: activo — sin OpenAI, parseo puro TypeScript/Regex`);
             onLog(`[INIT] 👤 UserId: ${this.userId || 'no autenticado'}`);
             onLog(`[INIT] 🔎 Source: ${config.source} | Query: "${config.query}" | Max: ${config.maxResults}`);
