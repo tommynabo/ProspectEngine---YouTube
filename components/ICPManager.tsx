@@ -8,11 +8,13 @@ function TagInput({
   tags, onChange, placeholder, suggestions = [],
 }: { tags: string[]; onChange: (t: string[]) => void; placeholder: string; suggestions?: string[] }) {
   const [input, setInput] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const addTag = (value: string) => {
     const trimmed = value.trim();
     if (trimmed && !tags.includes(trimmed)) onChange([...tags, trimmed]);
     setInput('');
+    setShowSuggestions(false);
   };
 
   const handleKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -26,32 +28,33 @@ function TagInput({
 
   return (
     <div className="relative">
-      <div className="min-h-[42px] flex flex-wrap gap-1.5 items-center border border-border rounded-lg px-3 py-2 bg-background focus-within:border-primary/50 transition-colors">
+      <div className="min-h-[auto] flex flex-wrap gap-2 items-center border border-border rounded-lg px-3 py-2.5 bg-background focus-within:border-primary/50 transition-colors">
         {tags.map(tag => (
-          <span key={tag} className="flex items-center gap-1 bg-primary/15 text-primary text-xs font-medium px-2 py-0.5 rounded-md">
-            {tag}
-            <button type="button" onClick={() => onChange(tags.filter(t => t !== tag))} className="hover:text-red-400 transition-colors ml-0.5">
-              <X className="w-3 h-3" />
+          <span key={tag} className="inline-flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-semibold px-2.5 py-1 rounded-lg border border-primary/20 flex-shrink-0">
+            <span className="truncate max-w-[140px]">{tag}</span>
+            <button type="button" onClick={() => onChange(tags.filter(t => t !== tag))} className="hover:text-red-400 transition-colors flex-shrink-0">
+              <X className="w-3.5 h-3.5" />
             </button>
           </span>
         ))}
         <input
           value={input}
-          onChange={e => setInput(e.target.value)}
+          onChange={e => { setInput(e.target.value); setShowSuggestions(true); }}
           onKeyDown={handleKey}
-          onBlur={() => input.trim() && addTag(input)}
-          placeholder={tags.length === 0 ? placeholder : ''}
-          className="flex-1 min-w-[120px] bg-transparent text-sm outline-none text-foreground placeholder:text-muted-foreground"
+          onBlur={() => { input.trim() && addTag(input); setShowSuggestions(false); }}
+          onFocus={() => setShowSuggestions(true)}
+          placeholder={tags.length === 0 ? placeholder : 'Añadir más...'}
+          className="flex-1 min-w-[140px] bg-transparent text-sm outline-none text-foreground placeholder:text-muted-foreground py-1"
         />
       </div>
-      {filteredSuggestions.length > 0 && (
-        <div className="absolute z-10 top-full mt-1 w-full bg-card border border-border rounded-lg shadow-xl max-h-40 overflow-y-auto">
+      {showSuggestions && filteredSuggestions.length > 0 && (
+        <div className="absolute z-10 top-full mt-1 w-full bg-card border border-border rounded-lg shadow-xl max-h-48 overflow-y-auto">
           {filteredSuggestions.map(s => (
             <button
               key={s}
               type="button"
               onClick={() => addTag(s)}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-secondary transition-colors"
+              className="w-full text-left px-3 py-2.5 text-sm hover:bg-secondary transition-colors border-b border-border/30 last:border-b-0 font-medium text-foreground"
             >
               {s}
             </button>
