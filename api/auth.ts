@@ -24,6 +24,12 @@ interface AuthResponse {
  * Main authentication handler
  */
 export async function handleAuthRequest(req: AuthRequest): Promise<AuthResponse> {
+  // Validate required env vars before touching the DB
+  if (!process.env.DATABASE_URL && !process.env.POSTGRES_PRISMA_URL) {
+    console.error('[auth] DATABASE_URL is not set in environment');
+    return { success: false, error: 'Server configuration error: DATABASE_URL missing', statusCode: 500 };
+  }
+
   try {
     const { action } = req;
 
@@ -145,12 +151,23 @@ async function handleVerify(req: AuthRequest): Promise<AuthResponse> {
 
 // Vercel HTTP handler — this is what Vercel invokes for /api/auth
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, error: 'Method not allowed' });
+  // Always set Content-Type so the client never receives Vercel's HTML error page
+  res.setHeader('Content-Type', 'application/json');
+
+  try {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ success: false, error: 'Method not allowed' });
+    }
+
+    const body: AuthRequest = req.body || {};
+    const result = await handleAuthRequest(body);
+
+    return res.status(result.statusCode).json(result);
+  } catch (err: any) {
+    console.error('[/api/auth] Unhandled error:', err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Internal server error',
+    });
   }
-
-  const body: AuthRequest = req.body || {};
-  const result = await handleAuthRequest(body);
-
-  return res.status(result.statusCode).json(result);
 }

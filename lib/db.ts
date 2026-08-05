@@ -1,21 +1,30 @@
 import { Pool, PoolClient } from 'pg';
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || process.env.POSTGRES_PRISMA_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
-});
+// Lazy pool — only created on first use so a missing DATABASE_URL doesn't crash the module
+let pool: Pool | null = null;
 
-pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
-});
+function getPool(): Pool {
+  if (!pool) {
+    const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_PRISMA_URL;
+    if (!connectionString) {
+      throw new Error('DATABASE_URL environment variable is not set');
+    }
+    pool = new Pool({
+      connectionString,
+      ssl: { rejectUnauthorized: false },
+    });
+    pool.on('error', (err) => {
+      console.error('Unexpected error on idle pg client', err);
+    });
+  }
+  return pool;
+}
 
 /**
  * Get a client from the pool
  */
 export async function getClient(): Promise<PoolClient> {
-  return pool.connect();
+  return getPool().connect();
 }
 
 /**
