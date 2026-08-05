@@ -1,12 +1,42 @@
 {
-    "rewrites": [
+  "name": "ProspectEngine",
+  "version": 2,
+  "builds": [
+    {
+      "src": "vite.config.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "env": {
+    "DATABASE_URL": "@database_url",
+    "POSTGRES_PRISMA_URL": "@postgres_prisma_url",
+    "JWT_SECRET": "@jwt_secret",
+    "VITE_OPENAI_API_KEY": "@openai_api_key",
+    "VITE_APIFY_API_TOKEN": "@apify_token"
+  },
+  "rewrites": [
+    {
+      "source": "/api/apify/(.*)",
+      "destination": "https://api.apify.com/v2/$1"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
         {
-            "source": "/api/apify/(.*)",
-            "destination": "https://api.apify.com/v2/$1"
-        },
-        {
-            "source": "/(.*)",
-            "destination": "/index.html"
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
         }
-    ]
+      ]
+    }
+  ]
 }
