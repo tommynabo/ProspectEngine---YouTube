@@ -76,15 +76,34 @@ function App() {
 
   // Check Session on Mount
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setIsAuthenticated(true);
-        setUserId(session.user.id);
-        setCurrentPage('dashboard');
-        loadProfile(session.user.id);
-        loadHistory(session.user.id);
-      }
-    });
+    const token = localStorage.getItem('auth_token');
+    const storedUserId = localStorage.getItem('user_id');
+    if (token && storedUserId) {
+      // Verify token is still valid
+      fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ action: 'verify', token }),
+      })
+        .then(res => res.json())
+        .then(json => {
+          if (json.success && json.data?.user) {
+            const user = json.data.user;
+            setIsAuthenticated(true);
+            setUserId(user.id);
+            setUserName(user.full_name || user.email);
+            setCurrentPage('dashboard');
+            loadHistory(user.id);
+          } else {
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('user_id');
+          }
+        })
+        .catch(() => {
+          localStorage.removeItem('auth_token');
+          localStorage.removeItem('user_id');
+        });
+    }
 
     return () => {
       searchService.stop();
@@ -214,21 +233,17 @@ function App() {
   };
 
   // Auth Handlers
-  const handleLogin = () => {
-    // Called after successful Supabase login
+  const handleLogin = (user: { id: string; email: string; full_name: string; company_name: string }) => {
     setIsAuthenticated(true);
+    setUserId(user.id);
+    setUserName(user.full_name || user.email);
     setCurrentPage('dashboard');
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setUserId(session.user.id);
-        loadProfile(session.user.id);
-        loadHistory(session.user.id);
-      }
-    });
+    loadHistory(user.id);
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('user_id');
     setIsAuthenticated(false);
     setUserId(null);
     setUserName('');

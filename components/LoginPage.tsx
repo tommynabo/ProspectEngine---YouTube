@@ -1,16 +1,22 @@
 import React, { useState } from 'react';
-import { Activity, ArrowRight, Lock, Mail, AlertCircle } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { PROJECT_CONFIG } from '../config/project';
+import { Activity, ArrowRight, Lock, Mail, User, AlertCircle } from 'lucide-react';
+
+interface AuthUser {
+  id: string;
+  email: string;
+  full_name: string;
+  company_name: string;
+}
 
 interface LoginPageProps {
-  onLogin: () => void;
+  onLogin: (user: AuthUser) => void;
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
   const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -21,21 +27,35 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
     try {
       if (isRegistering) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
+        if (!fullName.trim()) {
+          throw new Error('El nombre completo es obligatorio');
+        }
+        if (password.length < 8) {
+          throw new Error('La contraseña debe tener al menos 8 caracteres');
+        }
+        const res = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'register', email, password, full_name: fullName }),
         });
-        if (error) throw error;
-        // Proceed implicitly if signup succeeds depending on Auth settings, or maybe auto-login
-        onLogin();
+        const json = await res.json();
+        if (!json.success) throw new Error(json.error || 'Error al crear cuenta');
+        const { token, user } = json.data;
+        localStorage.setItem('auth_token', token);
+        localStorage.setItem('user_id', user.id);
+        onLogin(user);
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
+        const res = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'login', email, password }),
         });
-
-        if (error) throw error;
-        onLogin();
+        const json = await res.json();
+        if (!json.success) throw new Error(json.error || 'Credenciales incorrectas');
+        const { token, user } = json.data;
+        localStorage.setItem('auth_token', token);
+        localStorage.setItem('user_id', user.id);
+        onLogin(user);
       }
     } catch (err: any) {
       console.error(err);
@@ -85,6 +105,25 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                 />
               </div>
             </div>
+
+            {isRegistering && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Nombre Completo</label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <User className="h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  </div>
+                  <input
+                    type="text"
+                    required={isRegistering}
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="block w-full pl-10 pr-3 py-2.5 bg-secondary/50 border border-input rounded-lg focus:ring-1 focus:ring-primary focus:border-primary text-sm transition-all text-gray-900 placeholder:text-gray-500"
+                    placeholder="Tu nombre"
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">Contraseña</label>

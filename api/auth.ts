@@ -1,6 +1,7 @@
-// API Handler for Authentication
-// Usage: POST /api/auth with body {action: 'login' | 'register', ...credentials}
+// API Handler for Authentication (Vercel Serverless Function)
+// Usage: POST /api/auth with body {action: 'login' | 'register' | 'verify', ...credentials}
 
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { registerUser, loginUser, verifyUserFromToken } from '../lib/auth';
 
 interface AuthRequest {
@@ -142,4 +143,14 @@ async function handleVerify(req: AuthRequest): Promise<AuthResponse> {
   };
 }
 
-export default handleAuthRequest;
+// Vercel HTTP handler — this is what Vercel invokes for /api/auth
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
+  }
+
+  const body: AuthRequest = req.body || {};
+  const result = await handleAuthRequest(body);
+
+  return res.status(result.statusCode).json(result);
+}
