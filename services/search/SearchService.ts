@@ -453,14 +453,13 @@ export class SearchService {
         this.userId = userId || null;
 
         try {
-            this.apiKey = import.meta.env.VITE_APIFY_API_TOKEN || '';
+            // API key es configurada en el servidor, nunca en el frontend
+            this.apiKey = ''; // Placeholder - las llamadas se hacen a través del backend
 
-            onLog(`[INIT] 🔑 API Key: ${this.apiKey ? '✅ presente (' + this.apiKey.substring(0, 10) + '...)' : '❌ FALTA'}`);
+            onLog(`[INIT] 🔑 API Key: Configurada en servidor (no expuesta en frontend)`);
             onLog(`[INIT] 🚫 Modo Zero-AI: activo — sin OpenAI, parseo puro TypeScript/Regex`);
             onLog(`[INIT] 👤 UserId: ${this.userId || 'no autenticado'}`);
             onLog(`[INIT] 🔎 Source: ${config.source} | Query: "${config.query}" | Max: ${config.maxResults}`);
-
-            if (!this.apiKey) throw new Error("Falta VITE_APIFY_API_TOKEN en .env — configúrala en Vercel → Settings → Environment Variables");
 
             // ═══════════════════════════════════════════════════════════════════════════
             // FASE 1: Pre-Flight - Descargar leads existentes del usuario

@@ -9,48 +9,32 @@ interface MessageModalProps {
 }
 
 const generateMessage = async (lead: Lead): Promise<string> => {
-   const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-
-   if (!apiKey) {
-      return `Hola${lead.decisionMaker?.name ? ` ${lead.decisionMaker.name}` : ''},
-
-He visto que ${lead.companyName} está en ${lead.location || 'vuestra zona'} y me ha parecido muy interesante lo que hacéis.
-
-${lead.aiAnalysis?.summary || ''}
-
-Me encantaría poder comentar cómo podríamos colaborar. ¿Tendríais disponibilidad para una breve llamada esta semana?
-
-Un saludo`;
-   }
-
    try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      // Llamar a nuestro endpoint del servidor (las keys están protegidas allí)
+      const response = await fetch('/api/openai', {
          method: 'POST',
          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
+            'Content-Type': 'application/json'
          },
          body: JSON.stringify({
-            model: 'gpt-4o-mini',
+            model: 'claude-3-5-sonnet-20241022',
             messages: [
                {
-                  role: 'system',
-                  content: `Eres un experto en copywriting de prospección B2B.
-Genera mensajes cortos, personalizados y con alto ratio de respuesta para:
-PÚBLICO: Emprendedores digitales, Infoproductores, Coaches High Ticket y Consultores online.
-DOLOR: Saturación por prospección manual y gestión de DMs.
-TONO: Directo, pragmático, de igual a igual. Cero humo. Sin cumplidos vacíos.
-OBJETIVO: Vender el siguiente paso (agendar llamada rápida o enviar Loom/Miro).
-FRONTERA DE CONTEXTO: Analiza el perfil del consultor. Conecta su nicho con el cuello de botella de escalar operaciones online sin quemarse respondiendo manual.`
-               },
-               {
                   role: 'user',
-                  content: `Genera un email de outreach para:
-Empresa: ${lead.companyName}
-Decisor: ${lead.decisionMaker?.name || 'Propietario'}
-Cargo: ${lead.decisionMaker?.role || 'N/A'}
-Ubicación: ${lead.location || 'España'}
-Info: ${lead.aiAnalysis?.summary || 'Empresa del sector'}`
+                  content: `Eres un experto en copywriting de prospección B2B.
+Genera un email corto, personalizado y con alto ratio de respuesta para:
+
+EMPRESA: ${lead.companyName}
+DECISOR: ${lead.decisionMaker?.name || 'Propietario'}
+CARGO: ${lead.decisionMaker?.role || 'N/A'}
+UBICACIÓN: ${lead.location || 'España'}
+INFO: ${lead.aiAnalysis?.summary || 'Empresa del sector'}
+
+INSTRUCCIONES:
+- Máximo 200 palabras
+- Tono: Directo, pragmático, de igual a igual
+- Objetivo: Agendar llamada rápida
+- Sin cumplidos vacíos`
                }
             ],
             temperature: 0.7,
@@ -58,8 +42,19 @@ Info: ${lead.aiAnalysis?.summary || 'Empresa del sector'}`
          })
       });
 
+      if (!response.ok) {
+         console.error('Error generating message:', response.statusText);
+         return `Hola${lead.decisionMaker?.name ? ` ${lead.decisionMaker.name}` : ''},\n\nMe encantaría comentar cómo podríamos colaborar.`;
+      }
+
       const data = await response.json();
-      return data.choices?.[0]?.message?.content || 'Error generando mensaje';
+      
+      // Claude retorna el contenido en un formato diferente
+      if (data.content && Array.isArray(data.content) && data.content[0]) {
+         return data.content[0].text || 'Error generando mensaje';
+      }
+      
+      return 'Error generando mensaje';
    } catch (error) {
       console.error('Error generating message:', error);
       return 'Error al generar el mensaje. Por favor, escribe manualmente.';
