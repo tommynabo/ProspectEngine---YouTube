@@ -1,36 +1,129 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
-import { SearchConfig } from './components/SearchConfig';
 import { SearchCriteriaModal } from './components/SearchCriteriaModal';
-import { AgentTerminal } from './components/AgentTerminal';
-import { LeadsTable } from './components/LeadsTable';
 import { MessageModal } from './components/MessageModal';
 import { LoginPage } from './components/LoginPage';
-import { CampaignsView } from './components/CampaignsView';
 import { HistoryModal } from './components/HistoryModal';
-import { CampaignHub } from './components/CampaignHub';
-import { CampaignWorkspace } from './components/CampaignWorkspace';
-import { ICP_PRESETS, IcpPreset } from './lib/searchFilterData';
-import { Lead, SearchConfigState, PageView, SearchSession } from './lib/types';
-import { PROJECT_CONFIG } from './config/project';
+import { ICPManager } from './components/ICPManager';
+import { SearchMethodManager } from './components/SearchMethodManager';
+import { ProspectingEnginesPage } from './components/ProspectingEnginesPage';
+import { EngineWorkspace } from './components/EngineWorkspace';
+import { SearchHistory } from './components/SearchHistory';
+import { Lead, SearchConfigState, PageView, SearchSession, ICPProfile, SearchMethod, ProspectingEngine } from './lib/types';
 import { searchService } from './services/search/SearchService';
 import { supabase } from './lib/supabase';
 
+// ─── Build search query from ICP + Method ─────────────────────────────────────
+
+function buildConfigFromEngine(icp: ICPProfile, method: SearchMethod): SearchConfigState {
+  const parts: string[] = [];
+  if (icp.jobTitles.length > 0) {
+    parts.push(`(${icp.jobTitles.map(t => `"${t}"`).join(' OR ')})`);
+  }
+  if (icp.keywords.length > 0) {
+    parts.push(`(${icp.keywords.map(k => `"${k}"`).join(' OR ')})`);
+  }
+  const query = method.queryTemplate || parts.join(' AND ') || `"${icp.niche}"`;
+
+  const sourceMap: Record<SearchMethod['platform'], SearchConfigState['source']> = {
+    linkedin: 'linkedin',
+    instagram: 'instagram',
+    google_maps: 'gmail',
+    other: 'linkedin',
+  };
+
+  return {
+    query,
+    source: sourceMap[method.platform],
+    mode: method.mode,
+    maxResults: method.maxResults,
+    advancedFilters: {
+      locations: icp.locations,
+      jobTitles: icp.jobTitles,
+      companySizes: icp.companySize,
+      industries: icp.industries,
+      keywords: icp.keywords,
+    },
+    icp_type: 'other',
+  };
+}
+
+// ─── localStorage helpers ─────────────────────────────────────────────────────
+
+function loadFromStorage<T>(key: string, userId: string): T[] {
+  try {
+    const raw = localStorage.getItem(`${key}_${userId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveToStorage<T>(key: string, userId: string, data: T[]) {
+  localStorage.setItem(`${key}_${userId}`, JSON.stringify(data));
+}
+
+// ─── Dashboard tabs ───────────────────────────────────────────────────────────
+
+type DashboardTab = 'icps' | 'methods';
+
+function DashboardPanel({
+  icps, onIcpsChange, methods, onMethodsChange,
+}: {
+  icps: ICPProfile[]; onIcpsChange: (v: ICPProfile[]) => void;
+  methods: SearchMethod[]; onMethodsChange: (v: SearchMethod[]) => void;
+}) {
+  const [tab, setTab] = useState<DashboardTab>('icps');
+
+  return (
+    <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
+      {/* Tabs */}
+      <div className="flex gap-1 bg-secondary/50 p-1 rounded-xl w-fit">
+        {([['icps', '🎯 ICPs Ideales'], ['methods', '🔍 Métodos de Búsqueda']] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+              tab === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'icps' && (
+        <ICPManager icps={icps} onChange={onIcpsChange} />
+      )}
+      {tab === 'methods' && (
+        <SearchMethodManager methods={methods} onChange={onMethodsChange} />
+      )}
+    </div>
+  );
+}
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+
 function App() {
-  // Navigation & Auth State
+  // Auth State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('');
   const [currentPage, setCurrentPage] = useState<PageView>('login');
 
+  // User Data (persisted per user in localStorage)
+  const [icps, setIcps] = useState<ICPProfile[]>([]);
+  const [methods, setMethods] = useState<SearchMethod[]>([]);
+  const [engines, setEngines] = useState<ProspectingEngine[]>([]);
+
+  // Active Engine workspace
+  const [activeEngine, setActiveEngine] = useState<ProspectingEngine | null>(null);
+
   // Search State
   const [config, setConfig] = useState<SearchConfigState>({
-    query: '("Emprendedor digital" OR "Infoproductor" OR "Coach High Ticket" OR "Consultor" OR "Dueño") AND ("CEO" OR "Fundador" OR "Propietario")',
+    query: '',
     source: 'linkedin',
     mode: 'fast',
-    maxResults: 1
+    maxResults: 10,
   });
-
   const [isSearching, setIsSearching] = useState(false);
   const [terminalVisible, setTerminalVisible] = useState(false);
   const [terminalExpanded, setTerminalExpanded] = useState(true);
@@ -43,9 +136,6 @@ function App() {
   const [selectedHistorySession, setSelectedHistorySession] = useState<SearchSession | null>(null);
   const [totalLeadsGenerated, setTotalLeadsGenerated] = useState(0);
 
-  // Campaign Navigation
-  const [activeCampaignId, setActiveCampaignId] = useState<'skool_creator' | 'agency' | null>(null);
-
   // Modal State
   const [isCriteriaModalOpen, setIsCriteriaModalOpen] = useState(false);
 
@@ -55,31 +145,27 @@ function App() {
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
-
       oscillator.type = 'sine';
       oscillator.frequency.setValueAtTime(1100, audioContext.currentTime);
       oscillator.frequency.exponentialRampToValueAtTime(1600, audioContext.currentTime + 0.1);
-
       gainNode.gain.setValueAtTime(0, audioContext.currentTime);
       gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.05);
       gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 1.5);
-
       oscillator.connect(gainNode);
       gainNode.connect(audioContext.destination);
-
       oscillator.start();
       oscillator.stop(audioContext.currentTime + 1.5);
     } catch (e) {
-      console.error("Audio play failed", e);
+      console.error('Audio play failed', e);
     }
   };
 
-  // Check Session on Mount
+  // ── Session persistence ──────────────────────────────────────────────────────
+
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
     const storedUserId = localStorage.getItem('user_id');
     if (token && storedUserId) {
-      // Verify token is still valid
       fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -93,7 +179,7 @@ function App() {
             setUserId(user.id);
             setUserName(user.full_name || user.email);
             setCurrentPage('dashboard');
-            loadHistory(user.id);
+            loadUserData(user.id);
           } else {
             localStorage.removeItem('auth_token');
             localStorage.removeItem('user_id');
@@ -104,111 +190,83 @@ function App() {
           localStorage.removeItem('user_id');
         });
     }
-
-    return () => {
-      searchService.stop();
-    };
+    return () => { searchService.stop(); };
   }, []);
 
-  const loadProfile = async (uid: string) => {
-    try {
-      // First, get user email from auth session
-      const { data: { session } } = await supabase.auth.getSession();
-      const userEmail = session?.user?.email || '';
+  // ── Persist ICPs/Methods/Engines when they change ─────────────────────────
 
-      // DEFENSIVE: Ensure profile exists (upsert)
-      // This fixes the case where the user was created BEFORE the trigger existed
-      const { error: upsertError } = await supabase
-        .from('profiles')
-        .upsert({
-          id: uid,
-          email: userEmail,
-          full_name: userEmail.split('@')[0], // fallback name from email
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'id' });
+  const handleIcpsChange = (updated: ICPProfile[]) => {
+    setIcps(updated);
+    if (userId) saveToStorage('icps', userId, updated);
+  };
 
-      if (upsertError) {
-        console.warn('[Profile] Upsert warning:', upsertError.message);
-      }
+  const handleMethodsChange = (updated: SearchMethod[]) => {
+    setMethods(updated);
+    if (userId) saveToStorage('methods', userId, updated);
+  };
 
-      // Now load the profile
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, full_name, email')
-        .eq('id', uid)
-        .single();
+  const handleEnginesChange = (updated: ProspectingEngine[]) => {
+    setEngines(updated);
+    if (userId) saveToStorage('engines', userId, updated);
+  };
 
-      if (data) {
-        if (data.full_name) {
-          setUserName(data.full_name);
-        }
-      }
-    } catch (e) {
-      console.error('Error loading profile', e);
-    }
+  // ── Load all user data ───────────────────────────────────────────────────────
+
+  const loadUserData = async (uid: string) => {
+    setIcps(loadFromStorage<ICPProfile>('icps', uid));
+    setMethods(loadFromStorage<SearchMethod>('methods', uid));
+    setEngines(loadFromStorage<ProspectingEngine>('engines', uid));
+    await loadHistory(uid);
   };
 
   const loadHistory = async (uid: string) => {
     try {
-      // Load search history first
       const { data: searchData, error: searchError } = await supabase
         .from('search_history')
         .select('*')
         .eq('user_id', uid)
         .order('executed_at', { ascending: false });
 
-      if (searchError) {
-        console.error('DB Error loading history:', searchError);
-        addLog(`[DB] ⚠️ Error cargando historial: ${searchError.message}`);
-        return;
-      }
+      if (searchError) { console.error('DB Error loading history:', searchError); return; }
 
       if (searchData && searchData.length > 0) {
-        // For each search session, load associated leads
         const sessions: SearchSession[] = await Promise.all(
           searchData.map(async (row) => {
-            // Load leads for this search session
-            const { data: leadsData, error: leadsError } = await supabase
+            const { data: leadsData } = await supabase
               .from('leads')
               .select('*')
               .eq('search_id', row.id);
 
-            let leads: Lead[] = [];
-            if (leadsError) {
-              console.warn(`[HISTORY] Error loading leads for session ${row.id}:`, leadsError);
-            } else if (leadsData && leadsData.length > 0) {
-              // Transform DB leads to Lead interface
-              leads = leadsData.map(l => ({
-                id: l.id,
-                source: (l.source || row.source || 'linkedin') as any,
-                companyName: l.company_name || 'Sin Nombre',
-                website: l.website,
-                location: l.location,
-                decisionMaker: l.decision_maker ? {
-                  name: l.decision_maker.name || '',
-                  role: l.decision_maker.role || '',
-                  email: l.decision_maker.email || '',
-                  phone: l.decision_maker.phone,
-                  linkedin: l.decision_maker.linkedin,
-                  facebook: l.decision_maker.facebook,
-                  instagram: l.decision_maker.instagram
-                } : undefined,
-                aiAnalysis: {
-                  summary: l.ai_analysis?.summary || '',
-                  painPoints: l.ai_analysis?.painPoints || [],
-                  generatedIcebreaker: l.ai_analysis?.generatedIcebreaker || '',
-                  fullMessage: l.ai_analysis?.fullMessage || '',
-                  fullAnalysis: l.ai_analysis?.fullAnalysis || l.ai_analysis?.summary || '',
-                  psychologicalProfile: l.ai_analysis?.psychologicalProfile || '',
-                  businessMoment: l.ai_analysis?.businessMoment || '',
-                  salesAngle: l.ai_analysis?.salesAngle || ''
-                },
-                messageA: l.message_a,
-                isNPLPotential: l.is_npl_potential || false,
-                status: (l.status || 'scraped') as any,
-                icp_type: l.icp_type as any
-              }));
-            }
+            const leads: Lead[] = (leadsData || []).map(l => ({
+              id: l.id,
+              source: (l.source || row.source || 'linkedin') as any,
+              companyName: l.company_name || 'Sin Nombre',
+              website: l.website,
+              location: l.location,
+              decisionMaker: l.decision_maker ? {
+                name: l.decision_maker.name || '',
+                role: l.decision_maker.role || '',
+                email: l.decision_maker.email || '',
+                phone: l.decision_maker.phone,
+                linkedin: l.decision_maker.linkedin,
+                facebook: l.decision_maker.facebook,
+                instagram: l.decision_maker.instagram,
+              } : undefined,
+              aiAnalysis: {
+                summary: l.ai_analysis?.summary || '',
+                painPoints: l.ai_analysis?.painPoints || [],
+                generatedIcebreaker: l.ai_analysis?.generatedIcebreaker || '',
+                fullMessage: l.ai_analysis?.fullMessage || '',
+                fullAnalysis: l.ai_analysis?.fullAnalysis || l.ai_analysis?.summary || '',
+                psychologicalProfile: l.ai_analysis?.psychologicalProfile || '',
+                businessMoment: l.ai_analysis?.businessMoment || '',
+                salesAngle: l.ai_analysis?.salesAngle || '',
+              },
+              messageA: l.message_a,
+              isNPLPotential: l.is_npl_potential || false,
+              status: (l.status || 'scraped') as any,
+              icp_type: l.icp_type as any,
+            }));
 
             return {
               id: row.id,
@@ -216,8 +274,10 @@ function App() {
               query: row.query || '',
               source: (row.source || 'linkedin') as any,
               resultsCount: leads.length || row.results_count || 0,
-              leads: leads,
-              icp_type: (row.icp_type as any) || ICP_PRESETS.find(p => p.query === row.query)?.id,
+              leads,
+              icp_type: (row.icp_type as any) || undefined,
+              engineId: row.engine_id || undefined,
+              engineName: row.engine_name || undefined,
             };
           })
         );
@@ -225,20 +285,20 @@ function App() {
         setHistory(sessions);
         const leadsSum = sessions.reduce((sum, s) => sum + s.leads.length, 0);
         setTotalLeadsGenerated(leadsSum);
-        console.log(`[HISTORY] Cargadas ${sessions.length} búsquedas con ${leadsSum} leads del cloud`);
       }
     } catch (e) {
       console.error('Error loading history', e);
     }
   };
 
-  // Auth Handlers
+  // ── Auth Handlers ────────────────────────────────────────────────────────────
+
   const handleLogin = (user: { id: string; email: string; full_name: string; company_name: string }) => {
     setIsAuthenticated(true);
     setUserId(user.id);
     setUserName(user.full_name || user.email);
     setCurrentPage('dashboard');
-    loadHistory(user.id);
+    loadUserData(user.id);
   };
 
   const handleLogout = async () => {
@@ -251,17 +311,35 @@ function App() {
     setLogs([]);
     setLeads([]);
     setTerminalVisible(false);
+    setActiveEngine(null);
+    setIcps([]);
+    setMethods([]);
+    setEngines([]);
     searchService.stop();
   };
 
-  const addLog = (message: string) => {
-    setLogs(prev => [...prev, message]);
+  const addLog = (message: string) => setLogs(prev => [...prev, message]);
+
+  // ── Run Engine ───────────────────────────────────────────────────────────────
+
+  const handleRunEngine = (engine: ProspectingEngine) => {
+    const icp = icps.find(i => i.id === engine.icpId);
+    const method = methods.find(m => m.id === engine.searchMethodId);
+    if (!icp || !method) return;
+
+    const engineConfig = buildConfigFromEngine(icp, method);
+    setConfig(engineConfig);
+    setActiveEngine(engine);
+    setLeads([]);
+    setLogs([]);
+    setTerminalVisible(false);
+    setCurrentPage('engines');
   };
 
-  // Search Logic
+  // ── Search Logic ─────────────────────────────────────────────────────────────
+
   const handleSearch = () => {
     if (!config.query) return;
-
     setIsSearching(true);
     setTerminalVisible(true);
     setTerminalExpanded(true);
@@ -270,14 +348,11 @@ function App() {
 
     searchService.startSearch(
       config,
-      // onLog
       (message) => addLog(message),
-      // onComplete
       async (results) => {
         setIsSearching(false);
         setLeads(results);
 
-        // Add to history (Local)
         const newSession: SearchSession = {
           id: Date.now().toString(),
           date: new Date(),
@@ -286,14 +361,14 @@ function App() {
           resultsCount: results.length,
           leads: results,
           icp_type: config.icp_type,
+          engineId: activeEngine?.id,
+          engineName: activeEngine?.name,
         };
         setHistory(prev => [newSession, ...prev]);
         setTotalLeadsGenerated(prev => prev + results.length);
 
-        // Save to Supabase (Cloud)
         if (userId) {
           try {
-            // 1. Insert search record and get ID
             const { data, error: searchError } = await supabase
               .from('search_history')
               .insert({
@@ -304,25 +379,21 @@ function App() {
                 max_results: config.maxResults,
                 results_count: results.length,
                 icp_type: config.icp_type || null,
-                executed_at: new Date().toISOString()
+                engine_id: activeEngine?.id || null,
+                engine_name: activeEngine?.name || null,
+                executed_at: new Date().toISOString(),
               })
               .select();
 
             if (searchError) {
-              console.error('DB Error saving search_history:', searchError);
               addLog(`[DB] ⚠️ Error al guardar búsqueda: ${searchError.message}`);
               return;
             }
 
-            if (!data || data.length === 0) {
-              addLog(`[DB] ⚠️ No se obtuvo ID de búsqueda.`);
-              return;
-            }
-
-            const searchId = data[0].id;
+            const searchId = data?.[0]?.id;
+            if (!searchId) return;
             addLog(`[DB] ✅ Búsqueda registrada (ID: ${searchId})`);
 
-            // 2. Save each lead to the leads table with search_id reference
             const leadsToInsert = results.map(lead => ({
               user_id: userId,
               search_id: searchId,
@@ -331,13 +402,11 @@ function App() {
               website: lead.website || null,
               location: lead.location || null,
               decision_maker: lead.decisionMaker ? {
-                name: lead.decisionMaker.name,
-                role: lead.decisionMaker.role,
-                email: lead.decisionMaker.email,
-                phone: lead.decisionMaker.phone || null,
+                name: lead.decisionMaker.name, role: lead.decisionMaker.role,
+                email: lead.decisionMaker.email, phone: lead.decisionMaker.phone || null,
                 linkedin: lead.decisionMaker.linkedin || null,
                 facebook: lead.decisionMaker.facebook || null,
-                instagram: lead.decisionMaker.instagram || null
+                instagram: lead.decisionMaker.instagram || null,
               } : null,
               ai_analysis: {
                 summary: lead.aiAnalysis?.summary || '',
@@ -347,36 +416,38 @@ function App() {
                 fullAnalysis: lead.aiAnalysis?.fullAnalysis || '',
                 psychologicalProfile: lead.aiAnalysis?.psychologicalProfile || '',
                 businessMoment: lead.aiAnalysis?.businessMoment || '',
-                salesAngle: lead.aiAnalysis?.salesAngle || ''
+                salesAngle: lead.aiAnalysis?.salesAngle || '',
               },
               message_a: lead.messageA || null,
               is_npl_potential: lead.isNPLPotential || false,
               icp_type: lead.icp_type || config.icp_type || null,
-              status: lead.status || 'scraped'
+              status: lead.status || 'scraped',
             }));
 
-            const { error: leadsError } = await supabase
-              .from('leads')
-              .insert(leadsToInsert);
-
+            const { error: leadsError } = await supabase.from('leads').insert(leadsToInsert);
             if (leadsError) {
-              console.error('DB Error saving leads:', leadsError);
-              addLog(`[DB] ⚠️ Error al guardar ${results.length} contactos: ${leadsError.message}`);
+              addLog(`[DB] ⚠️ Error al guardar contactos: ${leadsError.message}`);
             } else {
-              addLog(`[DB] ✅ ${results.length} contactos guardados correctamente.`);
+              addLog(`[DB] ✅ ${results.length} contactos guardados.`);
+            }
+
+            // Update engine totalLeads
+            if (activeEngine) {
+              const updatedEngines = engines.map(e =>
+                e.id === activeEngine.id
+                  ? { ...e, totalLeads: e.totalLeads + results.length, lastRunAt: new Date().toISOString() }
+                  : e
+              );
+              handleEnginesChange(updatedEngines);
             }
           } catch (err) {
-            console.error('Failed to save results to DB', err);
             addLog(`[ERROR] Excepción al guardar: ${err}`);
           }
-        } else {
-          addLog('[⚠️] No se guardó en la nube (usuario no autenticado).');
         }
 
         playGlassSound();
         setTimeout(() => setTerminalExpanded(false), 1500);
       },
-      // userId para deduplicación
       userId
     );
   };
@@ -394,70 +465,51 @@ function App() {
     setConfig(prev => ({ ...prev, ...updates }));
   };
 
-  const handleOpenCriteria = () => {
-    setIsCriteriaModalOpen(true);
-  };
-
   const handleSaveCriteria = (newQuery: string, filters?: any, icp_type?: 'agency' | 'skool_creator' | 'other') => {
-    setConfig(prev => ({
-      ...prev,
-      query: newQuery,
-      advancedFilters: filters,
-      icp_type: icp_type ?? prev.icp_type,
-    }));
+    setConfig(prev => ({ ...prev, query: newQuery, advancedFilters: filters, icp_type: icp_type ?? prev.icp_type }));
     setIsCriteriaModalOpen(false);
   };
 
-  const handleViewSessionResults = (session: SearchSession) => {
-    setSelectedHistorySession(session);
-  };
+  // ── Routing ──────────────────────────────────────────────────────────────────
 
-  const handleEnterCampaign = (preset: IcpPreset) => {
-    setActiveCampaignId(preset.id);
-    setLeads([]);
-    setLogs([]);
-    setTerminalVisible(false);
-    setConfig(prev => ({
-      ...prev,
-      query: preset.query,
-      icp_type: preset.id,
-      advancedFilters: {
-        locations: [],
-        jobTitles: preset.jobTitles,
-        companySizes: [],
-        industries: [],
-        keywords: preset.keywords,
-      }
-    }));
-  };
+  if (!isAuthenticated) return <LoginPage onLogin={handleLogin} />;
 
-  // --- Views ---
-
-  if (!isAuthenticated) {
-    return <LoginPage onLogin={handleLogin} />;
-  }
+  const activeIcp = activeEngine ? icps.find(i => i.id === activeEngine.icpId) : undefined;
+  const activeMethod = activeEngine ? methods.find(m => m.id === activeEngine.searchMethodId) : undefined;
+  const engineHistory = activeEngine ? history.filter(s => s.engineId === activeEngine.id) : [];
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/30">
       <Header
         currentPage={currentPage}
-        onNavigate={setCurrentPage}
+        onNavigate={(page) => {
+          if (page !== 'engines') setActiveEngine(null);
+          setCurrentPage(page);
+        }}
         onLogout={handleLogout}
         userName={userName}
       />
 
       <main className="max-w-7xl mx-auto px-6 py-8">
 
+        {/* ── Dashboard: ICPs + Methods tabs ── */}
         {currentPage === 'dashboard' && (
-          <div className="animate-[fadeIn_0.3s_ease-out]">
-            {activeCampaignId === null ? (
-              <CampaignHub
-                history={history}
-                onEnterCampaign={handleEnterCampaign}
-              />
-            ) : (
-              <CampaignWorkspace
-                campaignId={activeCampaignId}
+          <DashboardPanel
+            icps={icps}
+            onIcpsChange={handleIcpsChange}
+            methods={methods}
+            onMethodsChange={handleMethodsChange}
+          />
+        )}
+
+        {/* ── Engines page: list or workspace ── */}
+        {currentPage === 'engines' && (
+          <>
+            {activeEngine && activeIcp && activeMethod ? (
+              <EngineWorkspace
+                engine={activeEngine}
+                icp={activeIcp}
+                method={activeMethod}
                 config={config}
                 onChange={handleConfigChange}
                 onSearch={handleSearch}
@@ -468,25 +520,31 @@ function App() {
                 terminalExpanded={terminalExpanded}
                 onToggleTerminal={() => setTerminalExpanded(!terminalExpanded)}
                 leads={leads}
-                history={history.filter(s => s.icp_type === activeCampaignId)}
+                history={engineHistory}
                 onViewMessage={setSelectedLead}
-                onBack={() => {
-                  setActiveCampaignId(null);
-                  setLeads([]);
-                  setLogs([]);
-                  setTerminalVisible(false);
-                }}
-                onOpenCriteria={handleOpenCriteria}
+                onBack={() => { setActiveEngine(null); setLeads([]); setLogs([]); setTerminalVisible(false); }}
+                onOpenCriteria={() => setIsCriteriaModalOpen(true)}
                 totalLeadsGenerated={totalLeadsGenerated}
               />
+            ) : (
+              <ProspectingEnginesPage
+                engines={engines}
+                icps={icps}
+                methods={methods}
+                history={history}
+                onEnginesChange={handleEnginesChange}
+                onRunEngine={handleRunEngine}
+              />
             )}
-          </div>
+          </>
         )}
 
-        {currentPage === 'campaigns' && (
-          <CampaignsView
+        {/* ── History ── */}
+        {currentPage === 'history' && (
+          <SearchHistory
             history={history}
-            onSelectSession={handleViewSessionResults}
+            engines={engines}
+            icps={icps}
           />
         )}
 

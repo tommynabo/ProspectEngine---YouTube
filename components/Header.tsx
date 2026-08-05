@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, Bell, LogOut } from 'lucide-react';
+import { Activity, LogOut, Cpu, History, LayoutDashboard } from 'lucide-react';
 import { PageView } from '../lib/types';
 
 interface HeaderProps {
@@ -11,16 +11,11 @@ interface HeaderProps {
 
 export function Header({ currentPage, onNavigate, onLogout, userName }: HeaderProps) {
   const getLinkClass = (page: PageView) =>
-    `cursor-pointer transition-colors ${currentPage === page ? 'text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'}`;
-
-  // Compute initials
-  const initials = React.useMemo(() => {
-    if (!userName) return 'JD';
-    const parts = userName.trim().split(/\s+/);
-    if (parts.length === 0) return 'JD';
-    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }, [userName]);
+    `flex items-center gap-1.5 cursor-pointer transition-colors px-3 py-1.5 rounded-lg text-sm font-medium ${
+      currentPage === page
+        ? 'text-primary bg-primary/10'
+        : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+    }`;
 
   return (
     <header className="border-b border-border bg-background/50 backdrop-blur-md sticky top-0 z-30">
@@ -32,23 +27,25 @@ export function Header({ currentPage, onNavigate, onLogout, userName }: HeaderPr
           <span className="font-bold text-lg tracking-tight">Prospect<span className="text-primary">Engine</span></span>
         </div>
 
-        <nav className="hidden md:flex items-center gap-8 text-sm font-medium">
-          <a onClick={() => onNavigate('dashboard')} className={getLinkClass('dashboard')}>Panel</a>
-          <a onClick={() => onNavigate('campaigns')} className={getLinkClass('campaigns')}>Historial de Búsquedas</a>
+        <nav className="hidden md:flex items-center gap-1 text-sm font-medium">
+          <a onClick={() => onNavigate('dashboard')} className={getLinkClass('dashboard')}>
+            <LayoutDashboard className="w-4 h-4" /> Panel
+          </a>
+          <a onClick={() => onNavigate('engines')} className={getLinkClass('engines')}>
+            <Cpu className="w-4 h-4" /> Motores
+          </a>
+          <a onClick={() => onNavigate('history')} className={getLinkClass('history')}>
+            <History className="w-4 h-4" /> Historial
+          </a>
         </nav>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            {/* Separate Logout Button */}
-            <button
-              onClick={onLogout}
-              className="p-2 hover:bg-destructive/10 hover:text-destructive rounded-full transition-colors text-muted-foreground"
-              title="Cerrar Sesión"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+        <button
+          onClick={onLogout}
+          className="p-2 hover:bg-destructive/10 hover:text-destructive rounded-full transition-colors text-muted-foreground"
+          title="Cerrar Sesión"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
       </div>
     </header>
   );

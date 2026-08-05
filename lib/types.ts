@@ -1,6 +1,40 @@
 export type PlatformSource = 'gmail' | 'linkedin' | 'instagram';
 export type SearchMode = 'fast' | 'deep';
-export type PageView = 'login' | 'dashboard' | 'campaigns';
+export type PageView = 'login' | 'dashboard' | 'engines' | 'history';
+
+export interface ICPProfile {
+  id: string;
+  name: string;
+  niche: string;
+  jobTitles: string[];
+  companySize: string[];
+  locations: string[];
+  industries: string[];
+  keywords: string[];
+  painPoints: string;
+  revenueRange?: string;
+  createdAt: string;
+}
+
+export interface SearchMethod {
+  id: string;
+  name: string;
+  platform: 'linkedin' | 'google_maps' | 'instagram' | 'other';
+  mode: 'fast' | 'deep';
+  maxResults: number;
+  queryTemplate?: string;
+  createdAt: string;
+}
+
+export interface ProspectingEngine {
+  id: string;
+  name: string;
+  icpId: string;
+  searchMethodId: string;
+  totalLeads: number;
+  lastRunAt?: string;
+  createdAt: string;
+}
 
 export interface ApexEngineConfig {
   targetIndustries: string[];
@@ -90,4 +124,6 @@ export interface SearchSession {
   resultsCount: number;
   leads: Lead[];
   icp_type?: 'agency' | 'skool_creator' | 'other';
+  engineId?: string;
+  engineName?: string;
 }
