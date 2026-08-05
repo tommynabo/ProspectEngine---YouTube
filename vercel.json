@@ -7,11 +7,6 @@
       "use": "@vercel/node"
     }
   ],
-  "env": {
-    "DATABASE_URL": "@DATABASE_URL",
-    "POSTGRES_PRISMA_URL": "@POSTGRES_PRISMA_URL",
-    "JWT_SECRET": "@JWT_SECRET"
-  },
   "rewrites": [
     {
       "source": "/api/apify/(.*)",
